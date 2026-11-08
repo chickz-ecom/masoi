@@ -14,6 +14,7 @@ return items`;
 export class TimerScheduler {
   private handle: NodeJS.Timeout | null = null;
   private running = false;
+  private lastWarnAt = 0;
   private readonly key: string;
 
   constructor(
@@ -56,7 +57,11 @@ export class TimerScheduler {
         ),
       );
     } catch (err) {
-      this.logger.warn({ err: (err as Error).message }, 'timer poll failed');
+      // Polls every 250 ms: during a Redis outage log at most every 10 s.
+      if (Date.now() - this.lastWarnAt > 10_000) {
+        this.lastWarnAt = Date.now();
+        this.logger.warn({ err: (err as Error).message }, 'timer poll failed (Redis unavailable?)');
+      }
     } finally {
       this.running = false;
     }

@@ -13,8 +13,11 @@ const EnvSchema = z.object({
     .transform((v) => v === 'true' || v === '1'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   SESSION_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(7),
-  /** Key prefix so several deployments/tests can share one Redis. */
-  REDIS_PREFIX: z.string().default('ww:'),
+  /** Prefix of every Redis key and pub/sub channel (production Redis is shared with Kestrel: "ww:" is reserved). */
+  REDIS_PREFIX: z
+    .string()
+    .regex(/^[A-Za-z0-9_.-]+(:[A-Za-z0-9_.-]+)*:$/, 'must be non-empty and end with ":" (e.g. ww:)')
+    .default('ww:'),
   /** Grace period before treating a disconnect as "gone" (refresh tolerance). */
   /** Multiplier for HTTP rate limits (tests use a large value). */
   RATE_LIMIT_SCALE: z.coerce.number().min(1).max(10_000).default(1),

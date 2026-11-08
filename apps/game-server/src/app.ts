@@ -7,6 +7,7 @@ import { KeyedQueue, RedisLock } from './game/lock';
 import { TimerScheduler } from './game/scheduler';
 import { registerRoutes } from './http/routes';
 import { AppError, httpStatus } from './lib/errors';
+import { describeTargets, retryUntilReady, withTimeout } from './lib/dependencies';
 import { createLogger, type Logger } from './lib/logger';
 import { createPrisma } from './lib/prisma';
 import { createRedis } from './lib/redis';
@@ -32,8 +33,10 @@ export async function createApp(config: AppConfig, opts: { logger?: Logger } = {
   const sub = pub.duplicate();
   sub.on('error', (err) => logger.warn({ err: err.message }, 'redis sub error'));
 
-  await prisma.$connect();
-  await ensureRoleDefinitions(prisma);
+  // No DB/Redis round-trip here: Postgres/Redis are shared with another app on the VPS and may be restarting.
+  // listen() serves /api/health right away (db/redis=false) and waits for them instead of exiting (crash-loop).
+  let closing = false;
+  let ready = false;
 
   const prefix = config.REDIS_PREFIX;
   const lock = new RedisLock(redis, prefix);
@@ -75,7 +78,7 @@ export async function createApp(config: AppConfig, opts: { logger?: Logger } = {
     logger.error({ err, url: req.url }, 'http error');
     return reply.status(500).send({ code: 'INTERNAL', message: 'Lỗi máy chủ.' });
   });
-  await registerRoutes(http, { rooms, prisma, redis, tts, rateScale: config.RATE_LIMIT_SCALE });
+  await registerRoutes(http, { rooms, prisma, redis, tts, rateScale: config.RATE_LIMIT_SCALE, isReady: () => ready });
   await http.ready();
 
   const realtime = new Realtime(http.server, {
@@ -86,6 +89,7 @@ export async function createApp(config: AppConfig, opts: { logger?: Logger } = {
     corsOrigins: config.corsOrigins,
     pubClient: pub,
     subClient: sub,
+    redisPrefix: prefix,
     disconnectGraceMs: config.DISCONNECT_GRACE_MS,
     rateScale: config.RATE_LIMIT_SCALE,
     tts,
@@ -99,12 +103,27 @@ export async function createApp(config: AppConfig, opts: { logger?: Logger } = {
     address: () => address,
     async listen() {
       address = await http.listen({ port: config.GAME_SERVER_PORT, host: config.GAME_SERVER_HOST });
-      const restored = await games.reconcileTimers();
+      const targets = describeTargets(config.DATABASE_URL, config.REDIS_URL, prefix);
+      logger.info({ address, ...targets }, 'game server listening, connecting to Postgres / Redis');
+      let restored = 0;
+      const ok = await retryUntilReady(
+        'startup',
+        async () => {
+          await ensureRoleDefinitions(prisma);
+          if ((await withTimeout(redis.ping(), 5_000)) !== 'PONG') throw new Error('redis ping failed');
+          restored = await games.reconcileTimers();
+        },
+        logger,
+        () => closing,
+      );
+      if (!ok) return address;
       scheduler.start();
-      logger.info({ address, restoredTimers: restored, tts: tts.enabled ? `${config.TTS_URL} (${config.TTS_VOICE})` : 'off' }, 'game server listening');
+      ready = true;
+      logger.info({ address, restoredTimers: restored, tts: tts.enabled ? `${config.TTS_URL} (${config.TTS_VOICE})` : 'off' }, 'game server ready');
       return address;
     },
     async close() {
+      closing = true;
       await scheduler.stop();
       await realtime.close();
       await http.close().catch(() => undefined);

@@ -4,7 +4,6 @@ import { loadConfig } from './config';
 async function main() {
   const config = loadConfig();
   const app = await createApp(config);
-  await app.listen();
 
   let shuttingDown = false;
   const shutdown = async (signal: string) => {
@@ -24,6 +23,8 @@ async function main() {
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
   process.on('SIGINT', () => void shutdown('SIGINT'));
   process.on('unhandledRejection', (err) => app.logger.error({ err }, 'unhandled rejection'));
+  // Handlers first: listen() may wait a while for Postgres / Redis, and SIGTERM must still shut down cleanly.
+  await app.listen();
 }
 
 main().catch((err) => {

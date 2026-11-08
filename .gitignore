@@ -12,6 +12,8 @@ playwright-report/
 apps/web/public/assets/**/_generated/
 apps/game-server/src/generated/
 backups/
+.maintenance
+.deploy.lock
 deploy/certbot/
 .env.production
 apps/web/public/assets/**/_originals/

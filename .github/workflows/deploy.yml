@@ -1,0 +1,108 @@
+# Deploy tự động (docs/CICD.md): push lên main → CI xanh → deploy lên VPS (masoi.tiepdo.online).
+# Chỉ chạy khi biến repository DEPLOY_ENABLED = "true" (scripts/setup-cicd.sh đặt). Image do CI build một lần theo
+# commit SHA; ở đây chỉ kiểm tra image có trên GHCR rồi bảo VPS pull.
+# Lưu ý: workflow_run luôn dùng bản file này trên nhánh mặc định (main).
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  # Chạy tay: deploy lại một commit, hoặc rollback về commit trước (Actions → Deploy → Run workflow).
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Commit SHA (40 ký tự) đã qua CI trên main
+        required: true
+
+permissions:
+  contents: read
+  packages: read
+
+# Hai lần push liền nhau: lần sau chờ lần trước xong (không huỷ giữa chừng một migration).
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      vars.DEPLOY_ENABLED == 'true' && (
+        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
+         github.event.workflow_run.event == 'push') ||
+        github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: ${{ vars.APP_URL }}
+    env:
+      # Giá trị người nhập đi qua env, không chèn thẳng vào lệnh shell.
+      SHA: ${{ github.event.workflow_run.head_sha || inputs.sha }}
+    steps:
+      - name: Image phải có sẵn trên GHCR (build ở CI, không build lại)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::SHA không hợp lệ: $SHA"; exit 1; }
+          prefix="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin >/dev/null
+          for app in game-server web; do
+            docker manifest inspect "$prefix/$app:$SHA" >/dev/null ||
+              { echo "::error::Chưa có $prefix/$app:$SHA — commit này phải qua CI trên main trước"; exit 1; }
+          done
+
+      - name: VPS — pull → migration → khởi động (lỗi thì quay về bản trước)
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ vars.VPS_KNOWN_HOSTS }}
+          HOST: ${{ vars.VPS_HOST }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          # Key này chỉ chạy được masoi-ci-deploy <sha> trên VPS. Token GHCR (hết hạn khi job xong) đi qua stdin.
+          # Tải image có lúc bị ngắt giữa chừng: deploy dừng trước migration, chưa đổi gì → thử lại.
+          for attempt in 1 2 3; do
+            printf '%s\n%s\n' "$GITHUB_ACTOR" "$GH_TOKEN" |
+              ssh -o BatchMode=yes -o ConnectTimeout=20 "masoi-ci@$HOST" "$SHA" 2>&1 | tee deploy.out
+            [ "${PIPESTATUS[1]}" -eq 0 ] && exit 0
+            grep -q "không tải được" deploy.out || exit 1
+            echo "::warning::Tải image lỗi (lần $attempt/3), thử lại sau 30 s"
+            sleep 30
+          done
+          exit 1
+
+      - name: Smoke test từ Internet
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+        run: |
+          curl -fsS --retry 5 --retry-delay 3 --retry-all-errors "$APP_URL/api/health" |
+            jq -e '.ok == true and .db == true and .redis == true'
+          curl -fsS --retry 5 --retry-delay 3 --retry-all-errors -o /dev/null "$APP_URL/"
+
+  # Package private trên GHCR bị tính dung lượng: giữ 10 bản gần nhất mỗi image (đủ để rollback), xoá bản cũ hơn.
+  # Lỗi ở đây không làm đỏ lần deploy.
+  prune-images:
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    continue-on-error: true
+    permissions:
+      packages: write
+    strategy:
+      matrix:
+        app: [game-server, web]
+    steps:
+      - name: Tên package
+        id: pkg
+        run: |
+          repo="${GITHUB_REPOSITORY#*/}"
+          echo "name=${repo,,}/${{ matrix.app }}" >> "$GITHUB_OUTPUT"
+      - uses: actions/delete-package-versions@v5
+        with:
+          package-name: ${{ steps.pkg.outputs.name }}
+          package-type: container
+          min-versions-to-keep: 10

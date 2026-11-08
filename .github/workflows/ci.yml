@@ -1,0 +1,101 @@
+# CI (docs/CICD.md): cổng chặn deploy. Push lên main → check + image song song; deploy.yml chạy khi cả workflow xanh,
+# nên image của commit đỏ không bao giờ lên VPS. PR: chỉ check.
+name: CI
+
+on:
+  push:
+    branches: [main]
+    # Commit chỉ sửa tài liệu: không cần image mới, không deploy.
+    paths-ignore: ['docs/**', '**/*.md']
+  pull_request:
+
+# PR: lượt mới huỷ lượt cũ. main: chạy hết từng lượt (mỗi commit cần image để deploy).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      # Giống production (Postgres chung với Kestrel): superuser riêng, Ma Sói dùng role `masoi` KHÔNG superuser,
+      # chủ database masoi (tạo ở bước đầu) → migration cần quyền cao hơn sẽ đỏ ở đây, không phải lúc deploy.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      DATABASE_URL: postgresql://masoi:masoi@localhost:5432/masoi?schema=public
+      REDIS_URL: redis://localhost:6379
+      CI: 'true'
+    steps:
+      - name: Role masoi không superuser + database masoi (như Postgres chung trên VPS)
+        run: |
+          docker exec -i "${{ job.services.postgres.id }}" psql -X -q -v ON_ERROR_STOP=1 -U postgres <<'SQL'
+          CREATE ROLE masoi LOGIN PASSWORD 'masoi' NOSUPERUSER NOCREATEDB NOCREATEROLE;
+          CREATE DATABASE masoi OWNER masoi;
+          REVOKE ALL ON DATABASE masoi FROM PUBLIC;
+          SQL
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      # Engine + shared + game-server (integration với Postgres/Redis thật).
+      - run: npm test
+      # 2 trận đầy đủ (AUTO & HUMAN) bằng nhiều client Socket.IO.
+      - run: npm run test:e2e
+
+  # Image production, tag = commit SHA đủ 40 ký tự: ghcr.io/<owner>/<repo>/{game-server,web}:<sha>.
+  # Build ở đây (không build trên VPS dùng chung với Kestrel); deploy chỉ pull.
+  image:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        app: [game-server, web]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tên image (GHCR cần chữ thường)
+        id: name
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}/${{ matrix.app }}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/${{ matrix.app }}/Dockerfile
+          # Web: rỗng = cùng origin (Caddy chuyển /api, /socket.io sang game-server). Game-server bỏ qua.
+          build-args: NEXT_PUBLIC_GAME_SERVER_URL=
+          push: true
+          provenance: false
+          tags: ${{ steps.name.outputs.image }}:${{ github.sha }}
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.app }}

@@ -55,5 +55,6 @@ Log server không ghi token (pino redact) và không ghi vai/hành động ở m
 ## 6. Bảo trì
 
 - Migration production: service `migrate` trong `docker-compose.yml` chạy `prisma migrate deploy` trước khi game-server khởi động.
-- Backup: `scripts/backup-db.sh` (pg_dump gzip, giữ 14 bản) · khôi phục: `scripts/restore-db.sh`.
+- Production dùng chung PostgreSQL 16 của Kestrel: database `masoi`, role `masoi` (không superuser, chủ database) — `docs/DEPLOY_VPS_SHARED.md`.
+- Backup: `scripts/backup-db.sh` (`pg_dump -Fc` chỉ database `masoi`, kiểm tra đọc được, giữ 14 bản) · khôi phục: `scripts/restore-db.sh` (một transaction, lỗi → ROLLBACK, sao lưu hiện trạng trước).
 - Dọn dẹp (gợi ý cron): xóa `Room` `CLOSED` cũ hơn 30 ngày — cascade xóa toàn bộ dữ liệu liên quan.

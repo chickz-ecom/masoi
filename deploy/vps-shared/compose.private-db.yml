@@ -1,0 +1,65 @@
+# CHỈ ĐỂ QUAY LẠI CẤU HÌNH CŨ: Postgres/Redis riêng của Ma Sói (volume masoi_pg, masoi_redis còn giữ từ trước khi
+# chuyển sang dùng chung). Không dùng khi chạy bình thường.
+# Bật: MASOI_DB_MODE=private trong /opt/masoi/.env.production → deploy.sh, masoi-ci-deploy, backup-db.sh, restore-db.sh
+# tự thêm file này sau compose.yml; MASOI_POSTGRES_HOST / MASOI_REDIS_HOST bị bỏ qua.
+# Cách làm đầy đủ (gồm chuyển dữ liệu): docs/DEPLOY_VPS_SHARED.md → "Quay lại cấu hình cũ".
+# postgres/redis giữ nguyên định nghĩa cũ → Compose dùng lại container masoi-postgres-1 / masoi-redis-1.
+# Mật khẩu role masoi của Postgres riêng khác POSTGRES_PASSWORD hiện tại → đặt MASOI_PRIVATE_POSTGRES_PASSWORD.
+x-logging: &logging
+  driver: json-file
+  options: { max-size: '10m', max-file: '3' }
+
+x-private-database-url: &private-database-url postgresql://masoi:${MASOI_PRIVATE_POSTGRES_PASSWORD:-${POSTGRES_PASSWORD}}@postgres:5432/masoi?schema=public&connection_limit=10
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: masoi
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.production}
+      POSTGRES_DB: masoi
+    command: ['postgres', '-c', 'shared_buffers=64MB', '-c', 'max_connections=40']
+    volumes: ['pg:/var/lib/postgresql/data']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U masoi -d masoi']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    mem_limit: 384m
+    logging: *logging
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes', '--maxmemory', '96mb', '--maxmemory-policy', 'volatile-lru']
+    volumes: ['redis:/data']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    mem_limit: 160m
+    logging: *logging
+
+  migrate:
+    environment:
+      DATABASE_URL: *private-database-url
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  game-server:
+    environment:
+      DATABASE_URL: *private-database-url
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      redis: { condition: service_healthy }
+
+  db-tools:
+    environment:
+      PGHOST: postgres
+      PGPASSWORD: ${MASOI_PRIVATE_POSTGRES_PASSWORD:-${POSTGRES_PASSWORD}}
+
+volumes:
+  pg:
+  redis:

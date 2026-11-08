@@ -65,6 +65,8 @@ export interface RealtimeDeps {
   corsOrigins: string[];
   pubClient: Redis;
   subClient: Redis;
+  /** Shared Redis: every pub/sub channel of the Socket.IO adapter starts with this prefix (ww:sio#…). */
+  redisPrefix: string;
   disconnectGraceMs: number;
   rateScale?: number;
   tts?: TtsService;
@@ -88,7 +90,7 @@ export class Realtime implements GameBroadcaster, RoomBroadcaster {
       pingTimeout: 20_000,
       maxHttpBufferSize: 32 * 1024,
     });
-    this.io.adapter(createAdapter(deps.pubClient, deps.subClient, { key: 'masoi-sio' }));
+    this.io.adapter(createAdapter(deps.pubClient, deps.subClient, { key: `${deps.redisPrefix}sio` }));
     this.io.use((socket, next) => void this.authenticate(socket, next));
     this.io.on('connection', (socket) => void this.onConnection(socket));
     deps.games.setBroadcaster(this);

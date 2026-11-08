@@ -16,6 +16,7 @@ Hai chế độ dùng chung **một Game Engine** thuần TypeScript; chỉ khá
 | [docs/SOCKET_EVENTS.md](docs/SOCKET_EVENTS.md) | Hợp đồng Socket.IO |
 | [docs/SECURITY.md](docs/SECURITY.md) | Bảo mật & chống gian lận |
 | [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) | Milestone & trạng thái |
+| [docs/DEPLOY_VPS_SHARED.md](docs/DEPLOY_VPS_SHARED.md) · [docs/CICD.md](docs/CICD.md) · [docs/RUNBOOK_VPS.md](docs/RUNBOOK_VPS.md) | Deploy lên VPS chung với Kestrel · CI/CD (push là deploy) · Vận hành, bảo trì Postgres/Redis chung, khôi phục |
 | [docs/visual-assets-plan.md](docs/visual-assets-plan.md) · [docs/chatgpt-image-prompts.md](docs/chatgpt-image-prompts.md) | Kế hoạch & prompt tạo hình ảnh bằng ChatGPT |
 
 ## Cấu trúc
@@ -76,7 +77,9 @@ Người chơi bật/tắt lời dẫn bằng nút micro trên thanh trên cùng
 
 ## Triển khai chung VPS với Search app (Kestrel)
 
-VPS đã có Caddy + Cloudflare của Kestrel → làm theo **[docs/DEPLOY_VPS_SHARED.md](docs/DEPLOY_VPS_SHARED.md)** (dùng `deploy/vps-shared/`, không cần Nginx/certbot). Cập nhật về sau: `./deploy/vps-shared/push.sh ops@<IP>`.
+VPS đã có Caddy + Cloudflare của Kestrel → làm theo **[docs/DEPLOY_VPS_SHARED.md](docs/DEPLOY_VPS_SHARED.md)** (dùng `deploy/vps-shared/`, không cần Nginx/certbot). Production (`masoi.tiepdo.online`) dùng **chung PostgreSQL + Redis của Kestrel** qua mạng Docker `workspaces_shared` (database/role `masoi`, khoá Redis `ww:…`), không có Postgres/Redis riêng. Từ Mac: `push.sh ops@<IP> --dry-run` xem trước · `push.sh ops@<IP>` áp dụng cấu hình (không build) · `push.sh ops@<IP> --build` deploy phiên bản khi chưa bật CI/CD. Sao lưu/khôi phục: `sudo ./scripts/backup-db.sh`, `sudo ./scripts/restore-db.sh <file>` (chỉ database `masoi`).
+
+**CI/CD:** bật một lần `./scripts/setup-cicd.sh ops@<IP>` → từ đó `git push` lên `main` là GitHub Actions kiểm tra, build image (GHCR) và tự deploy, lỗi thì tự quay về bản trước. Xem **[docs/CICD.md](docs/CICD.md)**.
 
 ## Triển khai lên VPS Ubuntu riêng (22.04/24.04)
 
@@ -137,10 +140,12 @@ Game server tắt mềm (SIGTERM): dừng timer, đóng socket, ngắt DB/Redis.
 
 ### 6. Backup
 
+Stack riêng này dùng `MASOI_STACK=standalone` (mặc định của hai script là VPS dùng chung Kestrel):
+
 ```bash
-./scripts/backup-db.sh                      # backups/masoi-YYYYmmdd-HHMMSS.sql.gz (giữ 14 bản)
-crontab -e   # 15 3 * * * cd /opt/masoi && ./scripts/backup-db.sh >> backups/backup.log 2>&1
-./scripts/restore-db.sh backups/masoi-....sql.gz
+MASOI_STACK=standalone ./scripts/backup-db.sh                 # backups/masoi-YYYYmmdd-HHMMSS.dump (giữ 14 bản)
+crontab -e   # 15 3 * * * cd /opt/masoi && MASOI_STACK=standalone ./scripts/backup-db.sh >> backups/backup.log 2>&1
+MASOI_STACK=standalone ./scripts/restore-db.sh backups/masoi-....dump   # một transaction, lỗi → ROLLBACK
 ```
 
 Nên đồng bộ thư mục `backups/` ra ngoài VPS (rclone/S3).

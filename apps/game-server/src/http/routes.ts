@@ -8,6 +8,7 @@ import {
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Redis } from 'ioredis';
+import { withTimeout } from '../lib/dependencies';
 import { AppError } from '../lib/errors';
 import type { TtsService } from '../narration/ttsService';
 import type { RoomService } from '../rooms/roomService';
@@ -24,29 +25,35 @@ function parse<T>(schema: { safeParse: (v: unknown) => { success: true; data: T 
   return r.data;
 }
 
+const HEALTH_TIMEOUT_MS = 2_000;
+
 export async function registerRoutes(
   app: FastifyInstance,
-  deps: { rooms: RoomService; prisma: PrismaClient; redis: Redis; tts?: TtsService; rateScale?: number },
+  deps: { rooms: RoomService; prisma: PrismaClient; redis: Redis; tts?: TtsService; rateScale?: number; isReady?: () => boolean },
 ): Promise<void> {
   const { rooms, prisma, redis } = deps;
   const scale = deps.rateScale ?? 1;
   const limit = (max: number) => ({ rateLimit: { max: max * scale, timeWindow: '1 minute' } });
 
+  // Live check of the (shared) Postgres / Redis, each bounded by a timeout so the endpoint answers quickly during an
+  // outage. `ready` = boot finished (role definitions, timers restored). 503 unless all three are true.
   app.get('/api/health', { config: { rateLimit: false } }, async (_req, reply) => {
-    const checks = { db: false, redis: false };
-    try {
-      await prisma.$queryRaw`SELECT 1`;
-      checks.db = true;
-    } catch {
-      /* reported below */
-    }
-    try {
-      checks.redis = (await redis.ping()) === 'PONG';
-    } catch {
-      /* reported below */
-    }
-    const ok = checks.db && checks.redis;
-    return reply.status(ok ? 200 : 503).send({ ok, ...checks, time: Date.now() });
+    const [db, redisOk] = await Promise.all([
+      withTimeout(prisma.$queryRaw`SELECT 1`, HEALTH_TIMEOUT_MS).then(
+        () => true,
+        () => false,
+      ),
+      // Not connected → false at once (a PING would wait in ioredis' offline queue).
+      redis.status !== 'ready'
+        ? Promise.resolve(false)
+        : withTimeout(redis.ping(), HEALTH_TIMEOUT_MS).then(
+            (r) => r === 'PONG',
+            () => false,
+          ),
+    ]);
+    const ready = deps.isReady?.() ?? true;
+    const ok = db && redisOk && ready;
+    return reply.status(ok ? 200 : 503).send({ ok, db, redis: redisOk, ready, time: Date.now() });
   });
 
   app.post(

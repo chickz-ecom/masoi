@@ -1,6 +1,6 @@
 # IMPLEMENTATION_PLAN.md — Kế hoạch & trạng thái
 
-Cập nhật: 2026-11-07. ✅ xong · 🟡 một phần · ⬜ chưa làm.
+Cập nhật: 2026-11-08. ✅ xong · 🟡 một phần · ⬜ chưa làm.
 
 ## Milestone 1 — Project Foundation ✅
 | Hạng mục | Trạng thái | Vị trí |
@@ -56,6 +56,9 @@ Cập nhật: 2026-11-07. ✅ xong · 🟡 một phần · ⬜ chưa làm.
 | Security hardening | ✅ | `docs/SECURITY.md` |
 | Dockerfiles, Compose, Nginx HTTPS/WSS, certbot, backup | ✅ | |
 | Healthchecks, graceful shutdown, structured logging | ✅ | |
+| CI/CD: GitHub Actions (lint, typecheck, test, e2e) → image GHCR → deploy tự động lên VPS, rollback | ✅ | `docs/CICD.md`, `.github/workflows/` |
+| Production dùng chung PostgreSQL/Redis với Kestrel (`workspaces_shared`), backup/restore chỉ database `masoi`, đường quay lại Postgres/Redis riêng | ✅ | `docs/DEPLOY_VPS_SHARED.md`, `deploy/vps-shared/` |
+| Chịu được Postgres/Redis chung khởi động lại (chờ khi boot, health có timeout), pool ≤ 10, kênh pub/sub `ww:`, `maintenance.sh` | ✅ | `docs/RUNBOOK_VPS.md` |
 | Load testing | ⬜ | Đề xuất: k6/Artillery với socket.io-client |
 | Monitoring (metrics, alert) | ⬜ | Đề xuất: Prometheus exporter + Uptime Kuma |
 

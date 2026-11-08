@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Thiết lập lần đầu trên VPS (chạy trong /opt/masoi, cần sudo):
 #   sudo ./deploy/vps-shared/setup.sh <domain> [cert-name]
-#   - tạo .env.production (mật khẩu Postgres ngẫu nhiên) nếu chưa có
+#   - tạo .env.production (mật khẩu ngẫu nhiên cho role masoi trên Postgres chung) nếu chưa có
 #   - thêm khối <domain> vào /etc/caddy/Caddyfile (sao lưu trước, validate, reload; lỗi → khôi phục)
 #   cert-name: bỏ trống = dùng chứng chỉ Origin của Kestrel (`import origin_tls`);
 #              "masoi" = dùng /etc/caddy/certs/masoi.pem + masoi.key (domain riêng).
@@ -23,7 +23,8 @@ else
   sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 24)/" .env.production
   chmod 600 .env.production
   owner=$(stat -c '%U' .); chown "$owner:$owner" .env.production 2>/dev/null || true
-  echo "   đã tạo (mật khẩu Postgres ngẫu nhiên)"
+  echo "   đã tạo (mật khẩu role masoi ngẫu nhiên). Postgres chung cần role + database masoi với đúng mật khẩu này:"
+  echo "   docs/DEPLOY_VPS_SHARED.md → \"Hạ tầng dùng chung\" (làm cùng phía Kestrel)"
 fi
 
 echo "== Caddy ($CADDYFILE)"
@@ -56,4 +57,4 @@ else
     exit 1
   fi
 fi
-echo "== OK — tiếp theo: sudo ./deploy/vps-shared/deploy.sh"
+echo "== OK — tiếp theo (VPS mới, chưa có image): sudo ./deploy/vps-shared/deploy.sh --build"

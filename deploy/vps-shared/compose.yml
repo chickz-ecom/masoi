@@ -1,65 +1,49 @@
-# Ma Sói trên VPS dùng chung với Kestrel (Search app).
+# Ma Sói trên VPS dùng chung với Kestrel (Search app) — docs/DEPLOY_VPS_SHARED.md.
 # - Không có Nginx/certbot: Caddy trên host (của Kestrel) nhận HTTPS từ Cloudflare và chuyển vào 127.0.0.1.
-# - Postgres/Redis RIÊNG của Ma Sói (không publish cổng), có giới hạn RAM → không ảnh hưởng Kestrel.
+# - PostgreSQL / Redis DÙNG CHUNG với Kestrel qua mạng ngoài `workspaces_shared` (Kestrel tạo, gắn alias):
+#     shared-postgres = kestrel-postgres-1 (PostgreSQL 16) → database `masoi`, role `masoi` (không superuser)
+#     shared-redis    = kestrel-redis-1    (Redis 7, noeviction) → db 0, mọi key / kênh pub/sub của Ma Sói bắt đầu bằng ww:
+#   Không có service postgres/redis riêng. Quay lại cấu hình cũ: MASOI_DB_MODE=private (compose.private-db.yml).
 # - Cổng host chỉ bind 127.0.0.1: web 3100, game-server 4100 (Kestrel dùng 3000, 8787, 9464, 5432, 6379, 8108).
-# Chạy từ /opt/masoi:  docker compose -f deploy/vps-shared/compose.yml --env-file .env.production up -d
+# Chạy từ /opt/masoi (deploy.sh / masoi-ci-deploy tự ghép đúng tham số):
+#   docker compose -f deploy/vps-shared/compose.yml --env-file .env.production up -d --no-build
+# Image:
+#   - Deploy tay (deploy.sh --build): masoi-game-server:latest, masoi-web:latest — đúng tên image đang chạy từ trước.
+#   - CI/CD (docs/CICD.md): ghcr.io/<owner>/<repo>/{game-server,web}:<commit sha>, ghi trong /var/lib/masoi-ci/image.env.
 name: masoi
 
 x-logging: &logging
   driver: json-file
   options: { max-size: '10m', max-file: '3' }
 
+# Postgres chung: database + role cố định `masoi`; mật khẩu = POSTGRES_PASSWORD (mật khẩu của role masoi).
+# connection_limit = pool Prisma của MỘT process (game-server: 10; migrate dùng 1). Cụm có max_connections=100 chung với
+# Kestrel, Ma Sói được tối đa 40 → muốn chạy nhiều game-server thì số bản × 10 + 2 ≤ 40.
+x-database-url: &database-url postgresql://masoi:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.production}@${MASOI_POSTGRES_HOST:-shared-postgres}:5432/masoi?schema=public&connection_limit=10
+
 services:
-  postgres:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: masoi
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.production}
-      POSTGRES_DB: masoi
-    command: ['postgres', '-c', 'shared_buffers=64MB', '-c', 'max_connections=40']
-    volumes: ['pg:/var/lib/postgresql/data']
-    healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U masoi -d masoi']
-      interval: 5s
-      timeout: 3s
-      retries: 20
-    mem_limit: 384m
-    logging: *logging
-
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    command: ['redis-server', '--appendonly', 'yes', '--maxmemory', '96mb', '--maxmemory-policy', 'volatile-lru']
-    volumes: ['redis:/data']
-    healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
-      interval: 5s
-      timeout: 3s
-      retries: 20
-    mem_limit: 160m
-    logging: *logging
-
   # One-shot: Prisma migrations before the game server starts (runs on every `up`, no-op when in sync).
   migrate:
     build: { context: ../.., dockerfile: apps/game-server/Dockerfile }
-    image: masoi-game-server:latest
+    image: ${MASOI_GAME_SERVER_IMAGE:-masoi-game-server:latest}
     command: ['npx', 'prisma', 'migrate', 'deploy']
     environment:
-      DATABASE_URL: postgresql://masoi:${POSTGRES_PASSWORD}@postgres:5432/masoi?schema=public
-    depends_on:
-      postgres: { condition: service_healthy }
+      DATABASE_URL: *database-url
+    networks: [default, shared]
     restart: 'no'
     logging: *logging
 
   game-server:
-    image: masoi-game-server:latest
+    image: ${MASOI_GAME_SERVER_IMAGE:-masoi-game-server:latest}
     restart: unless-stopped
     ports: ['127.0.0.1:${MASOI_GAME_PORT:-4100}:4000']
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://masoi:${POSTGRES_PASSWORD}@postgres:5432/masoi?schema=public
-      REDIS_URL: redis://redis:6379
+      DATABASE_URL: *database-url
+      REDIS_URL: redis://${MASOI_REDIS_HOST:-shared-redis}:6379/0
+      # Redis chung với Kestrel (prefix "sa:"): "ww:" dành riêng cho Ma Sói — mọi key và kênh pub/sub (ww:sio#…).
+      # Cố định ở đây, không lấy từ .env.production.
+      REDIS_PREFIX: 'ww:'
       CORS_ORIGINS: https://${DOMAIN:?set DOMAIN in .env.production}
       # Caddy on the host forwards the real client IP (CF-Connecting-IP) in X-Forwarded-For.
       TRUST_PROXY: 'true'
@@ -69,9 +53,9 @@ services:
       TTS_VOICE: ${TTS_VOICE:-Hải Đăng}
       TTS_API_KEY: ${TTS_API_KEY:-}
     extra_hosts: ['host.docker.internal:host-gateway']
+    networks: [default, shared]
     depends_on:
       migrate: { condition: service_completed_successfully }
-      redis: { condition: service_healthy }
     stop_grace_period: 20s
     mem_limit: 512m
     logging: *logging
@@ -81,7 +65,7 @@ services:
       context: ../..
       dockerfile: apps/web/Dockerfile
       args: { NEXT_PUBLIC_GAME_SERVER_URL: '' }
-    image: masoi-web:latest
+    image: ${MASOI_WEB_IMAGE:-masoi-web:latest}
     restart: unless-stopped
     ports: ['127.0.0.1:${MASOI_WEB_PORT:-3100}:3000']
     depends_on:
@@ -89,6 +73,24 @@ services:
     mem_limit: 512m
     logging: *logging
 
-volumes:
-  pg:
-  redis:
+  # Chỉ chạy một lần khi gọi (scripts/backup-db.sh, restore-db.sh), không chạy khi `up`: client PostgreSQL 16 nối
+  # vào đúng database masoi bằng role masoi — không có quyền với searchapp hay database khác của cụm chung.
+  db-tools:
+    image: postgres:16-alpine
+    profiles: [tools]
+    environment:
+      PGHOST: ${MASOI_POSTGRES_HOST:-shared-postgres}
+      PGPORT: '5432'
+      PGUSER: masoi
+      PGDATABASE: masoi
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    networks: [default, shared]
+    restart: 'no'
+    logging: *logging
+
+networks:
+  # Mạng chung với Kestrel — Kestrel tạo (`docker network create workspaces_shared`) và gắn alias shared-postgres,
+  # shared-redis. Compose của Ma Sói không tạo / xoá mạng này.
+  shared:
+    external: true
+    name: workspaces_shared

@@ -10,6 +10,8 @@
 !.env.example
 !.env.production.example
 backups
+.maintenance
+.deploy.lock
 deploy/certbot
 plan.md
 deploy/certs
