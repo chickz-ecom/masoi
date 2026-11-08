@@ -1,0 +1,41 @@
+{
+  "name": "@masoi/game-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=../../.env src/index.ts",
+    "build": "node scripts/with-root-env.mjs prisma generate && tsup",
+    "start": "node dist/index.js",
+    "typecheck": "node scripts/with-root-env.mjs prisma generate >/dev/null && tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "db:migrate": "node scripts/with-root-env.mjs prisma migrate dev",
+    "db:deploy": "node scripts/with-root-env.mjs prisma migrate deploy",
+    "db:generate": "node scripts/with-root-env.mjs prisma generate",
+    "db:seed": "tsx --env-file-if-exists=../../.env prisma/seed.ts",
+    "db:studio": "node scripts/with-root-env.mjs prisma studio"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.1.0",
+    "@fastify/rate-limit": "^10.3.0",
+    "@masoi/engine": "0.1.0",
+    "@masoi/shared": "0.1.0",
+    "@prisma/client": "6.19.3",
+    "@socket.io/redis-adapter": "^8.3.0",
+    "fastify": "^5.6.0",
+    "ioredis": "^5.8.0",
+    "pino": "^9.9.0",
+    "prisma": "6.19.3",
+    "socket.io": "^4.8.1",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "pino-pretty": "^13.1.0",
+    "socket.io-client": "^4.8.1",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.0",
+    "vitest": "^3.2.4"
+  }
+}

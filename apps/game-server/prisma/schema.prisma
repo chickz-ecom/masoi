@@ -1,0 +1,283 @@
+// Ma Sói Online — database schema
+// Access policy (see docs/DATABASE.md):
+//   * Game.state, GameRoleAssignment, GameAction, non-public GameEvent rows are SECRET.
+//     They are read only by the game server's GameRepository and leave the server
+//     exclusively through engine.projectView() (per-viewer projection).
+//   * PlayerSession stores only SHA-256 hashes of session tokens.
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum GameMode {
+  AUTO
+  HUMAN
+}
+
+enum RoomStatus {
+  LOBBY
+  IN_GAME
+  CLOSED
+}
+
+enum MemberKind {
+  PLAYER
+  MODERATOR
+  SPECTATOR
+}
+
+enum GameStatus {
+  RUNNING
+  ENDED
+  ABORTED
+}
+
+enum EventVisibility {
+  PUBLIC
+  PRIVATE
+  MODERATOR
+}
+
+enum ActionResult {
+  ACCEPTED
+  REJECTED
+}
+
+/// A room is a persistent lobby that can host several successive games.
+model Room {
+  id            String        @id @default(cuid())
+  code          String        @unique
+  mode          GameMode
+  status        RoomStatus    @default(LOBBY)
+  hostPlayerId  String?
+  currentGameId String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  closedAt      DateTime?
+  settings      RoomSettings?
+  players       Player[]
+  games         Game[]
+
+  @@index([status])
+}
+
+model RoomSettings {
+  roomId          String   @id
+  room            Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  name            String
+  maxPlayers      Int
+  /// Partial<Record<RoleId, number>>; empty object = automatic deck for the current player count.
+  deck            Json
+  /// engine RuleConfig
+  rules           Json
+  /// engine TimerConfig (seconds)
+  timers          Json
+  allowSpectators Boolean  @default(false)
+  allowRejoin     Boolean  @default(true)
+  updatedAt       DateTime @updatedAt
+}
+
+/// A member of a room: player, moderator or spectator. Nickname is display-only, never an identity.
+model Player {
+  id             String            @id @default(cuid())
+  roomId         String
+  room           Room              @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  nickname       String
+  /// lower-cased nickname, unique among active members (enforced in service under a room lock)
+  nicknameKey    String
+  kind           MemberKind
+  ready          Boolean           @default(false)
+  joinedAt       DateTime          @default(now())
+  leftAt         DateTime?
+  kickedAt       DateTime?
+  sessions       PlayerSession[]
+  participations GameParticipant[]
+
+  @@index([roomId])
+  @@index([roomId, nicknameKey])
+}
+
+model PlayerSession {
+  id         String    @id @default(cuid())
+  playerId   String
+  player     Player    @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  /// SHA-256(token) hex. The raw token is only ever held by the client.
+  tokenHash  String    @unique
+  createdAt  DateTime  @default(now())
+  lastSeenAt DateTime  @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+
+  @@index([playerId])
+}
+
+/// One game instance inside a room. `state` is the authoritative engine snapshot (optimistic `version`).
+model Game {
+  id           String               @id @default(cuid())
+  roomId       String
+  room         Room                 @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  number       Int
+  mode         GameMode
+  status       GameStatus           @default(RUNNING)
+  ruleset      String
+  version      Int                  @default(0)
+  state        Json
+  phaseType    String
+  phaseId      Int
+  nextDeadline DateTime?
+  eventSeq     Int                  @default(0)
+  startedAt    DateTime             @default(now())
+  endedAt      DateTime?
+  participants GameParticipant[]
+  assignments  GameRoleAssignment[]
+  phases       GamePhase[]
+  actions      GameAction[]
+  votes        Vote[]
+  events       GameEvent[]
+  result       GameResult?
+  auditLogs    ModeratorAuditLog[]
+
+  @@unique([roomId, number])
+  @@index([status, nextDeadline])
+}
+
+model GameParticipant {
+  id          String              @id @default(cuid())
+  gameId      String
+  game        Game                @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  playerId    String
+  player      Player              @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  seat        Int
+  alive       Boolean             @default(true)
+  diedAtPhase Int?
+  assignment  GameRoleAssignment?
+
+  @@unique([gameId, playerId])
+  @@unique([gameId, seat])
+}
+
+model RoleDefinition {
+  id          String               @id
+  name        String
+  nameEn      String
+  team        String
+  description String
+  ability     String
+  advanced    Boolean              @default(false)
+  maxCount    Int?
+  config      Json
+  updatedAt   DateTime             @updatedAt
+  assignments GameRoleAssignment[]
+}
+
+/// SECRET: who holds which role.
+model GameRoleAssignment {
+  id            String          @id @default(cuid())
+  gameId        String
+  game          Game            @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  participantId String          @unique
+  participant   GameParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  roleId        String
+  role          RoleDefinition  @relation(fields: [roleId], references: [id])
+  assignedAt    DateTime        @default(now())
+
+  @@index([gameId])
+}
+
+model GamePhase {
+  id        String    @id @default(cuid())
+  gameId    String
+  game      Game      @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  phaseId   Int
+  type      String
+  step      String?
+  night     Int
+  day       Int
+  startedAt DateTime
+  endsAt    DateTime?
+  endedAt   DateTime?
+
+  @@unique([gameId, phaseId])
+}
+
+/// SECRET: every player/moderator command, accepted or rejected (idempotency key = clientActionId).
+model GameAction {
+  id             String       @id @default(cuid())
+  gameId         String
+  game           Game         @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  phaseId        Int
+  actorPlayerId  String
+  clientActionId String
+  kind           String
+  payload        Json
+  result         ActionResult
+  errorCode      String?
+  createdAt      DateTime     @default(now())
+
+  @@unique([gameId, actorPlayerId, clientActionId])
+  @@index([gameId, phaseId])
+}
+
+model Vote {
+  id             String   @id @default(cuid())
+  gameId         String
+  game           Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  phaseId        Int
+  day            Int
+  round          Int
+  voterPlayerId  String
+  targetPlayerId String?
+  locked         Boolean
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([gameId, phaseId, voterPlayerId])
+}
+
+/// Append-only event log. PRIVATE rows list their recipients; MODERATOR rows are moderator-only.
+model GameEvent {
+  id         String          @id @default(cuid())
+  gameId     String
+  game       Game            @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  seq        Int
+  type       String
+  visibility EventVisibility
+  recipients String[]
+  payload    Json
+  createdAt  DateTime        @default(now())
+
+  @@unique([gameId, seq])
+}
+
+model GameResult {
+  gameId    String   @id
+  game      Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  winner    String?
+  winnerIds String[]
+  nights    Int
+  days      Int
+  /// full reveal: roles, deaths, vote history, timeline
+  summary   Json
+  endedAt   DateTime
+}
+
+model ModeratorAuditLog {
+  id                String   @id @default(cuid())
+  gameId            String
+  game              Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  moderatorPlayerId String
+  command           String
+  payload           Json
+  before            Json?
+  after             Json?
+  reason            String?
+  createdAt         DateTime @default(now())
+
+  @@index([gameId])
+}

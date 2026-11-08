@@ -1,0 +1,27 @@
+# Thêm khối này vào CUỐI /etc/caddy/Caddyfile trên VPS (cùng file với Kestrel), đổi masoi.example.com
+# thành domain của bạn. Cloudflare (đám mây cam) đứng trước, SSL/TLS "Full (strict)".
+#
+# Chứng chỉ:
+#   - Domain là subdomain đã nằm trong chứng chỉ Origin của Kestrel (vd. *.kestrel-search.com)
+#       → giữ dòng `import origin_tls`.
+#   - Domain khác → tạo Cloudflare Origin Certificate cho domain đó, lưu vào
+#       /etc/caddy/certs/masoi.pem + masoi.key, rồi thay `import origin_tls` bằng:
+#       tls /etc/caddy/certs/masoi.pem /etc/caddy/certs/masoi.key
+
+masoi.example.com {
+	import origin_tls
+	encode zstd gzip
+
+	# ufw chỉ cho IP Cloudflare vào 80/443 → CF-Connecting-IP tin được; game-server đọc IP thật từ X-Forwarded-For.
+	@game path /api/* /socket.io/*
+	handle @game {
+		reverse_proxy 127.0.0.1:4100 {
+			header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
+		}
+	}
+	handle {
+		reverse_proxy 127.0.0.1:3100 {
+			header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
+		}
+	}
+}

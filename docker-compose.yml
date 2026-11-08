@@ -1,0 +1,116 @@
+# Production stack. Usage (on the VPS, from the repo root):
+#   cp .env.production.example .env.production && edit it
+#   docker compose --env-file .env.production up -d --build
+name: masoi
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: '10m', max-file: '5' }
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-masoi}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.production}
+      POSTGRES_DB: ${POSTGRES_DB:-masoi}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    logging: *logging
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes', '--maxmemory', '256mb', '--maxmemory-policy', 'volatile-lru']
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *logging
+
+  # One-shot: apply Prisma migrations before the game server starts.
+  migrate:
+    build: { context: ., dockerfile: apps/game-server/Dockerfile }
+    image: masoi-game-server:latest
+    command: ['npx', 'prisma', 'migrate', 'deploy']
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-masoi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-masoi}?schema=public
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: 'no'
+    logging: *logging
+
+  game-server:
+    image: masoi-game-server:latest
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-masoi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-masoi}?schema=public
+      REDIS_URL: redis://redis:6379
+      CORS_ORIGINS: https://${DOMAIN:?set DOMAIN in .env.production}
+      TRUST_PROXY: 'true'
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-7}
+      TTS_URL: ${TTS_URL:-}
+      TTS_VOICE: ${TTS_VOICE:-Hải Đăng}
+      TTS_API_KEY: ${TTS_API_KEY:-}
+    extra_hosts:
+      # lets TTS_URL=http://host.docker.internal:8000 reach a VieNeu server running on the host
+      - 'host.docker.internal:host-gateway'
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    stop_grace_period: 20s
+    logging: *logging
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_GAME_SERVER_URL: ''
+    image: masoi-web:latest
+    restart: unless-stopped
+    depends_on:
+      game-server: { condition: service_healthy }
+    logging: *logging
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./deploy/nginx/templates:/etc/nginx/templates:ro
+      - ./deploy/certbot/conf:/etc/letsencrypt:ro
+      - ./deploy/certbot/www:/var/www/certbot:ro
+    depends_on:
+      web: { condition: service_healthy }
+      game-server: { condition: service_healthy }
+    logging: *logging
+
+  # Renews Let's Encrypt certificates every 12h (webroot challenge served by nginx).
+  certbot:
+    image: certbot/certbot:latest
+    restart: unless-stopped
+    entrypoint: ['/bin/sh', '-c', 'trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done']
+    volumes:
+      - ./deploy/certbot/conf:/etc/letsencrypt
+      - ./deploy/certbot/www:/var/www/certbot
+    logging: *logging
+
+volumes:
+  pgdata:
+  redisdata:

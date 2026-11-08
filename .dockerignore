@@ -1,0 +1,17 @@
+**/node_modules
+**/.next
+**/dist
+**/coverage
+**/test-results
+**/playwright-report
+.git
+.env
+.env.*
+!.env.example
+!.env.production.example
+backups
+deploy/certbot
+plan.md
+deploy/certs
+**/*.pem
+**/*.key

@@ -1,0 +1,402 @@
+{
+  "cards/villager": {
+    "master": true,
+    "webp": [
+      384,
+      768
+    ]
+  },
+  "cards/werewolf": {
+    "master": true,
+    "webp": [
+      384,
+      768
+    ]
+  },
+  "cards/seer": {
+    "master": true,
+    "webp": [
+      384,
+      768
+    ]
+  },
+  "cards/witch": {
+    "master": true,
+    "webp": [
+      384,
+      768
+    ]
+  },
+  "cards/guardian": {
+    "master": true,
+    "webp": [
+      384,
+      768
+    ]
+  },
+  "cards/hunter": {
+    "master": true,
+    "webp": [
+      384,
+      768
+    ]
+  },
+  "cards/cupid": {
+    "master": true,
+    "webp": [
+      384,
+      768
+    ]
+  },
+  "cards/elder": {
+    "master": true,
+    "webp": [
+      384,
+      768
+    ]
+  },
+  "cards/white-wolf": {
+    "master": true,
+    "webp": [
+      384,
+      768
+    ]
+  },
+  "card-backs/card-back": {
+    "master": true,
+    "webp": [
+      384,
+      768
+    ]
+  },
+  "backgrounds/landing": {
+    "master": true,
+    "webp": [
+      960,
+      1536
+    ]
+  },
+  "backgrounds/landing-mobile": {
+    "master": true,
+    "webp": [
+      640,
+      1024
+    ]
+  },
+  "backgrounds/lobby": {
+    "master": true,
+    "webp": [
+      960,
+      1536
+    ]
+  },
+  "backgrounds/lobby-mobile": {
+    "master": true,
+    "webp": [
+      640,
+      1024
+    ]
+  },
+  "backgrounds/role-reveal": {
+    "master": true,
+    "webp": [
+      960,
+      1536
+    ]
+  },
+  "backgrounds/role-reveal-mobile": {
+    "master": true,
+    "webp": [
+      640,
+      1024
+    ]
+  },
+  "backgrounds/night": {
+    "master": true,
+    "webp": [
+      960,
+      1536
+    ]
+  },
+  "backgrounds/night-mobile": {
+    "master": true,
+    "webp": [
+      640,
+      1024
+    ]
+  },
+  "backgrounds/day": {
+    "master": true,
+    "webp": [
+      960,
+      1536
+    ]
+  },
+  "backgrounds/day-mobile": {
+    "master": true,
+    "webp": [
+      640,
+      1024
+    ]
+  },
+  "backgrounds/discussion": {
+    "master": true,
+    "webp": [
+      960,
+      1536
+    ]
+  },
+  "backgrounds/discussion-mobile": {
+    "master": true,
+    "webp": [
+      640,
+      1024
+    ]
+  },
+  "backgrounds/voting": {
+    "master": true,
+    "webp": [
+      960,
+      1536
+    ]
+  },
+  "backgrounds/voting-mobile": {
+    "master": true,
+    "webp": [
+      640,
+      1024
+    ]
+  },
+  "backgrounds/elimination": {
+    "master": true,
+    "webp": [
+      960,
+      1536
+    ]
+  },
+  "backgrounds/elimination-mobile": {
+    "master": true,
+    "webp": [
+      640,
+      1024
+    ]
+  },
+  "backgrounds/victory-village": {
+    "master": true,
+    "webp": [
+      960,
+      1536
+    ]
+  },
+  "backgrounds/victory-village-mobile": {
+    "master": true,
+    "webp": [
+      640,
+      1024
+    ]
+  },
+  "backgrounds/victory-werewolf": {
+    "master": true,
+    "webp": [
+      960,
+      1536
+    ]
+  },
+  "backgrounds/victory-werewolf-mobile": {
+    "master": true,
+    "webp": [
+      640,
+      1024
+    ]
+  },
+  "backgrounds/moderator": {
+    "master": true,
+    "webp": [
+      960,
+      1536
+    ]
+  },
+  "backgrounds/moderator-mobile": {
+    "master": true,
+    "webp": [
+      640,
+      1024
+    ]
+  },
+  "icons/role-villager": {
+    "master": true,
+    "webp": [
+      128,
+      256
+    ]
+  },
+  "icons/role-werewolf": {
+    "master": true,
+    "webp": [
+      128,
+      256
+    ]
+  },
+  "icons/role-seer": {
+    "master": true,
+    "webp": [
+      128,
+      256
+    ]
+  },
+  "icons/role-witch": {
+    "master": true,
+    "webp": [
+      128,
+      256
+    ]
+  },
+  "icons/role-guardian": {
+    "master": true,
+    "webp": [
+      128,
+      256
+    ]
+  },
+  "icons/role-hunter": {
+    "master": true,
+    "webp": [
+      128,
+      256
+    ]
+  },
+  "icons/role-cupid": {
+    "master": true,
+    "webp": [
+      128,
+      256
+    ]
+  },
+  "icons/role-elder": {
+    "master": true,
+    "webp": [
+      128,
+      256
+    ]
+  },
+  "icons/role-white-wolf": {
+    "master": true,
+    "webp": [
+      128,
+      256
+    ]
+  },
+  "icons/team-village": {
+    "master": true,
+    "webp": [
+      128,
+      256
+    ]
+  },
+  "icons/team-werewolf": {
+    "master": true,
+    "webp": [
+      128,
+      256
+    ]
+  },
+  "icons/team-special": {
+    "master": true,
+    "webp": [
+      128,
+      256
+    ]
+  },
+  "effects/moon-full": {
+    "master": true,
+    "webp": [
+      256,
+      512
+    ]
+  },
+  "effects/moon-blood": {
+    "master": true,
+    "webp": [
+      256,
+      512
+    ]
+  },
+  "effects/potion-heal": {
+    "master": true,
+    "webp": [
+      256,
+      512
+    ]
+  },
+  "effects/potion-poison": {
+    "master": true,
+    "webp": [
+      256,
+      512
+    ]
+  },
+  "effects/vote-token": {
+    "master": true,
+    "webp": [
+      256,
+      512
+    ]
+  },
+  "effects/shield": {
+    "master": true,
+    "webp": [
+      256,
+      512
+    ]
+  },
+  "effects/victory-emblem": {
+    "master": true,
+    "webp": [
+      256,
+      512
+    ]
+  },
+  "effects/defeat-emblem": {
+    "master": true,
+    "webp": [
+      256,
+      512
+    ]
+  },
+  "effects/transition-dusk": {
+    "master": true,
+    "webp": [
+      960,
+      1536
+    ]
+  },
+  "effects/transition-dawn": {
+    "master": true,
+    "webp": [
+      960,
+      1536
+    ]
+  },
+  "effects/border-ornament": {
+    "master": true,
+    "webp": [
+      960,
+      1536
+    ]
+  },
+  "effects/fog-overlay": {
+    "master": true,
+    "webp": [
+      960,
+      1536
+    ]
+  },
+  "logos/logo-emblem": {
+    "master": true,
+    "webp": [
+      128,
+      256,
+      512
+    ]
+  }
+}

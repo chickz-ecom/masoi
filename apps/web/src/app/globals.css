@@ -1,0 +1,128 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-night-950: #06070d;
+  --color-night-900: #0a0c16;
+  --color-night-800: #10132a;
+  --color-night-700: #1a1b3b;
+  --color-night-600: #26254f;
+  --color-violet-deep: #2a1f4d;
+  --color-gold: #c9a25c;
+  --color-gold-bright: #ecd497;
+  --color-gold-dim: #7d6236;
+  --color-blood: #8e1a2b;
+  --color-blood-bright: #d6404f;
+  --color-moon: #d9e1ff;
+  --color-parchment: #efe7d3;
+  --color-ash: #aaa392;
+  --color-team-village: #d2b06a;
+  --color-team-werewolf: #d6404f;
+  --color-team-special: #a98be0;
+
+  --font-display: var(--font-cormorant), 'Cormorant Garamond', Georgia, serif;
+  --font-sans: var(--font-be-vietnam), 'Be Vietnam Pro', system-ui, sans-serif;
+
+  --animate-fog: fog-drift 60s linear infinite;
+  --animate-glow: moon-glow 6s ease-in-out infinite;
+
+  @keyframes fog-drift {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+  }
+  @keyframes moon-glow {
+    0%, 100% { opacity: 0.85; filter: blur(0px); }
+    50% { opacity: 1; filter: blur(1px); }
+  }
+}
+
+@layer base {
+  /* The page background lives on <html> so that the fixed phase backgrounds (z-index -10)
+     paint above it; a background on <body> would cover them. */
+  html {
+    color-scheme: dark;
+    background:
+      radial-gradient(1200px 600px at 70% -10%, rgb(42 31 77 / 0.55), transparent 60%),
+      radial-gradient(900px 500px at 10% 110%, rgb(142 26 43 / 0.18), transparent 60%),
+      var(--color-night-950);
+    background-attachment: fixed;
+  }
+  body {
+    min-height: 100dvh;
+    background: transparent;
+    color: var(--color-parchment);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-gold-bright);
+    outline-offset: 3px;
+    border-radius: 6px;
+  }
+  ::selection {
+    background: rgb(201 162 92 / 0.35);
+  }
+}
+
+@layer components {
+  .panel {
+    background: linear-gradient(180deg, rgb(26 27 59 / 0.78), rgb(10 12 22 / 0.86));
+    border: 1px solid rgb(201 162 92 / 0.22);
+    box-shadow:
+      0 0 0 1px rgb(0 0 0 / 0.4) inset,
+      0 20px 60px -20px rgb(0 0 0 / 0.8);
+    backdrop-filter: blur(10px);
+    border-radius: 1rem;
+  }
+  .ornate {
+    position: relative;
+  }
+  .ornate::before,
+  .ornate::after {
+    content: '';
+    position: absolute;
+    width: 22px;
+    height: 22px;
+    border-color: rgb(201 162 92 / 0.65);
+    pointer-events: none;
+  }
+  .ornate::before {
+    top: 8px;
+    left: 8px;
+    border-top: 1px solid;
+    border-left: 1px solid;
+    border-top-left-radius: 6px;
+  }
+  .ornate::after {
+    bottom: 8px;
+    right: 8px;
+    border-bottom: 1px solid;
+    border-right: 1px solid;
+    border-bottom-right-radius: 6px;
+  }
+  .title-display {
+    font-family: var(--font-display);
+    letter-spacing: 0.02em;
+  }
+  .gold-text {
+    background: linear-gradient(180deg, var(--color-gold-bright), var(--color-gold) 60%, var(--color-gold-dim));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .divider-ornament {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgb(201 162 92 / 0.6), transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,0 +1,22 @@
+node_modules/
+.next/
+dist/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+test-results/
+playwright-report/
+apps/web/public/assets/**/_generated/
+apps/game-server/src/generated/
+backups/
+deploy/certbot/
+.env.production
+apps/web/public/assets/**/_originals/
+# Chứng chỉ / khoá (Cloudflare Origin) — xem deploy/certs/README.md
+deploy/certs/*
+!deploy/certs/README.md
+*.pem
+*.key
